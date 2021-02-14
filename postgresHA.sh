@@ -23,7 +23,7 @@ cat > /var/lib/pgsql/12/data/repmgr.conf << EOF
     max_wal_senders = 10
     max_replication_slots = 15
     wal_level = 'replica'
-    hot_stanby = on
+    hot_standby = on
     archive_mode = on
     archive_command = '/bin/true'
 EOF
@@ -46,3 +46,11 @@ local   replication     all                                     trust
 host    replication     all             127.0.0.1/32            trust
 host    replication     all             192.168.1.0/24          trust
 
+#edit owner for conf files
+chown postgres:postgres /var/lib/pgsql/12/data/{pg_hba.conf,repmgr.conf}
+chmod 600 /var/lib/pgsql/12/data/{pg_hba.conf,repmgr.conf}
+
+#create user and database repmgr
+createuser -s repmgr
+createdb repmgr -O repmgr
+alter user repmgr set search_path to repmgr, "$user", public;
