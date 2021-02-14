@@ -1,56 +1,69 @@
-#centOS 7 - 3 virtual mashines
+#ubuntu20.04 - 3 virtual mashines
+sudo apt update && sudo apt upgrade
 
 #install postgresql
-sudo yum install https://apt.postgresql.org/pub/repos/yum/reporpms/EL-7-x86_64/pgdg-redhat-repo-latest.noarch.rpm
-sudo yum install -y repmgr12 postgresql12 postgresql12-server postgresql12-contrib postgresql12-libs
+sudo apt install postgresql-12 -y
+sudo systemctl stop postgresql
 
 #add to PATH
-cat >> /var/lib/pgsql/.bash_profile << 'EOF'
-    PATH=$PATH:$HOME/bin:/usr/pgsql-12/bin
-    export PATH
-EOF
+sudo ln -s /usr/lib/postgresql/9.5/bin/* /usr/sbin/
 
-#add to autoloading
-systemctl enable repmgr12 postgresql-12
+#install patroni
+sudo apt install python3 python3-pip -y
+sudo pip3 install --upgrade setuptools
+sudo pip3 install patroni
 
-#initialization of database
-/usr/pgsql-12/bin/postgresql-12-setup initdb
+#install etcd - 4 VM ubuntu20.04
+sudo apt install etcd -y
 
-#edit config files
-nano /var/lib/pgsql/12/data/postgresql.conf -> LISTEN_ADDRESS = '*'
-cat > /var/lib/pgsql/12/data/repmgr.conf << EOF
-    shared_preload_libraries = 'repmgr'
-    max_wal_senders = 10
-    max_replication_slots = 15
-    wal_level = 'replica'
-    hot_standby = on
-    archive_mode = on
-    archive_command = '/bin/true'
-EOF
+#install HAProxy - 5 VM ubuntu20.04 
+sudo apt install haproxy -y
 
-#add to main config
-echo -e "include_if_exists 'repmgr.conf'" >> /var/lib/pgsql/12/data/postgresql.conf
+#config /etc/defaut/etcd
+ETCD_LISTEN_PEER_URLS="http://192.168.1.37:2380"
 
-#edit pg_hba.conf
-nano /var/lib/pgsql/12/data/pg_hba.conf
-# "local" is for Unix domain socket connections only
-local   all             all                                     peer
-# IPv4 local connections:
-host    all             all             127.0.0.1/32            md5
-host    study_db        study           192.168.1.0/24          md5
-# IPv6 local connections:
-host    all             all             ::1/128                 ident
-# Allow replication connections from localhost, by a user with the
-# replication privilege.
-local   replication     all                                     trust
-host    replication     all             127.0.0.1/32            trust
-host    replication     all             192.168.1.0/24          trust
+ETCD_LISTEN_CLIENT_URLS="http://localhost:2379,http://192.168.1.37:2379"
 
-#edit owner for conf files
-chown postgres:postgres /var/lib/pgsql/12/data/{pg_hba.conf,repmgr.conf}
-chmod 600 /var/lib/pgsql/12/data/{pg_hba.conf,repmgr.conf}
+ETCD_INITIAL_ADVERTISE_PEER_URLS="http://192.168.1.37:2380"
 
-#create user and database repmgr
-createuser -s repmgr
-createdb repmgr -O repmgr
-alter user repmgr set search_path to repmgr, "$user", public;
+ETCD_INITIAL_CLUSTER="etcd0=http://192.168.1.37:2380,"
+
+ETCD_ADVERTISE_CLIENT_URLS="http://192.168.1.37:2379"
+
+ETCD_INITIAL_CLUSTER_TOKEN="cluster1"
+
+ETCD_INITIAL_CLUSTER_STATE="new"
+
+#config patroni - file /etc/patroni.yml
+sudo mkdir /data/patroni -p
+sudo chown postgres:postgres /data/patroni
+sudo chmod 700 /data/patroni
+
+#create patroni.service - /etc/systemd/system/patroni.service
+[Unit]
+Description=Runners to orchestrate a high-availability PostgreSQL
+After=syslog.target network.target
+
+[Service]
+Type=simple
+
+User=postgres
+Group=postgres
+
+ExecStart=/usr/local/bin/patroni /etc/patroni.yml
+
+KillMode=process
+
+TimeoutSec=30
+
+Restart=no
+
+[Install]
+WantedBy=multi-user.targ
+
+#start patroni
+sudo systemctl start patroni
+sudo systemctl status patroni
+
+#error
+screenshot
